@@ -8,10 +8,14 @@
 #include<emmintrin.h>
 
 #define MATRIX_SIZE 1200
+#define CASHE_LINE_SIZE 64
 
 void matrixMulVectorization();
 void matrixMulNoVectorization();
 void matrixMulIntrinsics();
+
+void matrixMulBlockNoVectorization();
+void matrixMulBlockVectorization();
 
 int main()
 {
@@ -34,6 +38,18 @@ int main()
 	runTime2 = clock() - runTime;
 	printf("\n3. %.3f s.", (float)runTime2/CLOCKS_PER_SEC);
 
+	/*Block multiplication no vectorization*/
+	runTime = clock();
+	matrixMulBlockNoVectorization();
+	runTime2 = clock() - runTime;
+	printf("\n4. %.3f s.", (float)runTime2/CLOCKS_PER_SEC);
+
+	/*Block multiplication vectorization*/
+	runTime = clock();
+	matrixMulBlockVectorization();
+	runTime2 = clock() - runTime;
+	printf("\n5. %.3f s.", (float)runTime2/CLOCKS_PER_SEC);
+
 	return 0;
 }
 
@@ -45,12 +61,13 @@ void matrixMulVectorization()
 
 	float * matrix3temp;
 	float * matrix2temp;
+	float temp;
 
 	for(int i = 0; i < MATRIX_SIZE; i++)
 	{
 		for(int k = 0; k < MATRIX_SIZE; k++)
 		{
-			float temp = matrix1[i * MATRIX_SIZE + k];
+			temp = matrix1[i * MATRIX_SIZE + k];
 			matrix3temp = matrix3 + i * MATRIX_SIZE;
 			matrix2temp = matrix2 + k * MATRIX_SIZE;
 			for(int j = 0; j < MATRIX_SIZE; j++)
@@ -71,12 +88,13 @@ void matrixMulNoVectorization()
 
 	float * matrix3temp;
 	float * matrix2temp;
+	float temp;
 
 	for(int i = 0; i < MATRIX_SIZE; i++)
 	{
 		for(int k = 0; k < MATRIX_SIZE; k++)
 		{
-			float temp = matrix1[i * MATRIX_SIZE + k];
+			temp = matrix1[i * MATRIX_SIZE + k];
 			matrix3temp = matrix3 + i * MATRIX_SIZE;
 			matrix2temp = matrix2 + k * MATRIX_SIZE;
 #pragma loop(no_vector)
@@ -99,12 +117,13 @@ void matrixMulIntrinsics()
 	__m128 * matrix3temp;
 	__m128 * matrix2temp;
 	__m128 mulTemp;
+	__m128 temp;
 
 	for(int i = 0; i < MATRIX_SIZE; i++)
 	{
 		for(int k = 0; k < MATRIX_SIZE; k++)
 		{
-			__m128 temp = _mm_set_ps1(matrix1[i * MATRIX_SIZE + k]);
+			temp = _mm_set_ps1(matrix1[i * MATRIX_SIZE + k]);
 			matrix3temp = (__m128 *)(matrix3 + i * MATRIX_SIZE);
 			matrix2temp = (__m128 *)(matrix2 + k * MATRIX_SIZE);
 
@@ -115,6 +134,71 @@ void matrixMulIntrinsics()
 			}
 		}
 	}
+
+	_aligned_free(matrix1);
+	_aligned_free(matrix2);
+	_aligned_free(matrix3);
+}
+
+void matrixMulBlockNoVectorization()
+{
+	int blockSize = 400;
+
+	float * matrix1 = (float *)_aligned_malloc(MATRIX_SIZE * MATRIX_SIZE * sizeof(float), 64);
+	float * matrix2 = (float *)_aligned_malloc(MATRIX_SIZE * MATRIX_SIZE * sizeof(float), 64);
+	float * matrix3 = (float *)_aligned_malloc(MATRIX_SIZE * MATRIX_SIZE * sizeof(float), 64);
+
+	float * matrix3temp;
+	float * matrix2temp;
+	float temp;
+
+	for(int i = 0; i < MATRIX_SIZE; i += blockSize)
+		for(int k = 0; k < MATRIX_SIZE; k += blockSize)
+			for(int j = 0; j < MATRIX_SIZE; j += blockSize)
+				for(int ib = 0; ib < blockSize; ib++)
+				{
+					matrix3temp = matrix3 + (i + ib) * MATRIX_SIZE + j;
+					for(int kb = 0; kb < blockSize; kb++)
+					{
+						temp = matrix1[(i + ib) * MATRIX_SIZE + (k + kb)];
+						matrix2temp = matrix2 + (k + kb) * MATRIX_SIZE + j;
+#pragma loop(no_vector)
+						for(int jb = 0; jb < blockSize; jb++)
+							matrix3[jb] += temp * matrix2[jb];
+					}
+				}
+
+	_aligned_free(matrix1);
+	_aligned_free(matrix2);
+	_aligned_free(matrix3);
+}
+
+void matrixMulBlockVectorization()
+{
+	int blockSize = 400;
+
+	float * matrix1 = (float *)_aligned_malloc(MATRIX_SIZE * MATRIX_SIZE * sizeof(float), 64);
+	float * matrix2 = (float *)_aligned_malloc(MATRIX_SIZE * MATRIX_SIZE * sizeof(float), 64);
+	float * matrix3 = (float *)_aligned_malloc(MATRIX_SIZE * MATRIX_SIZE * sizeof(float), 64);
+
+	float * matrix3temp;
+	float * matrix2temp;
+	float temp;
+
+	for(int i = 0; i < MATRIX_SIZE; i += blockSize)
+		for(int k = 0; k < MATRIX_SIZE; k += blockSize)
+			for(int j = 0; j < MATRIX_SIZE; j += blockSize)
+				for(int ib = 0; ib < blockSize; ib++)
+				{
+					matrix3temp = matrix3 + (i + ib) * MATRIX_SIZE + j;
+					for(int kb = 0; kb < blockSize; kb++)
+					{
+						temp = matrix1[(i + ib) * MATRIX_SIZE + (k + kb)];
+						matrix2temp = matrix2 + (k + kb) * MATRIX_SIZE + j;
+						for(int jb = 0; jb < blockSize; jb++)
+							matrix3[jb] += temp * matrix2[jb];
+					}
+				}
 
 	_aligned_free(matrix1);
 	_aligned_free(matrix2);
