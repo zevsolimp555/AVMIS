@@ -7,15 +7,21 @@
 #include<xmmintrin.h>
 #include<emmintrin.h>
 
+/*OpenMP*/
+#include<omp.h>
+
 #define MATRIX_SIZE 1200
 #define CASHE_LINE_SIZE 64
 
+/*Ordinary multiplication*/
 void matrixMulVectorization();
 void matrixMulNoVectorization();
 void matrixMulIntrinsics();
 
+/*Block multiplication*/
 void matrixMulBlockNoVectorization();
 void matrixMulBlockVectorization();
+void matrixMulBlockOpenMP();
 
 int main()
 {
@@ -49,6 +55,12 @@ int main()
 	matrixMulBlockVectorization();
 	runTime2 = clock() - runTime;
 	printf("\n5. %.3f s.", (float)runTime2/CLOCKS_PER_SEC);
+
+	/*Block multiplication OpenMP*/
+	runTime = clock();
+	matrixMulBlockOpenMP();
+	runTime2 = clock() - runTime;
+	printf("\n6. %.3f s.", (float)runTime2/CLOCKS_PER_SEC);
 
 	return 0;
 }
@@ -196,6 +208,42 @@ void matrixMulBlockVectorization()
 						temp = matrix1[(i + ib) * MATRIX_SIZE + (k + kb)];
 						matrix2temp = matrix2 + (k + kb) * MATRIX_SIZE + j;
 						for(int jb = 0; jb < blockSize; jb++)
+							matrix3[jb] += temp * matrix2[jb];
+					}
+				}
+
+	_aligned_free(matrix1);
+	_aligned_free(matrix2);
+	_aligned_free(matrix3);
+}
+
+void matrixMulBlockOpenMP()
+{
+	int blockSize = 600;
+
+	float * matrix1 = (float *)_aligned_malloc(MATRIX_SIZE * MATRIX_SIZE * sizeof(float), 64);
+	float * matrix2 = (float *)_aligned_malloc(MATRIX_SIZE * MATRIX_SIZE * sizeof(float), 64);
+	float * matrix3 = (float *)_aligned_malloc(MATRIX_SIZE * MATRIX_SIZE * sizeof(float), 64);
+
+	float * matrix3temp;
+	float * matrix2temp;
+	float temp;
+	int ib, kb, jb;
+
+	for(int i = 0; i < MATRIX_SIZE; i += blockSize)
+		for(int k = 0; k < MATRIX_SIZE; k += blockSize)
+			for(int j = 0; j < MATRIX_SIZE; j += blockSize)
+#pragma omp parallel for private(matrix3temp, matrix2temp, temp, kb, jb) shared(matrix3, matrix2, matrix1, k, j, i)
+				for(ib = 0; ib < blockSize; ib++)
+				{
+					matrix3temp = matrix3 + (i + ib) * MATRIX_SIZE + j;
+#pragma omp parallel for private(temp, matrix2temp, jb) shared(matrix3, matrix2, matrix1, i, j, k)
+					for(kb = 0; kb < blockSize; kb++)
+					{
+						temp = matrix1[(i + ib) * MATRIX_SIZE + (k + kb)];
+						matrix2temp = matrix2 + (k + kb) * MATRIX_SIZE + j;
+#pragma loop(no_vector) omp parallel for shared(matrix3, matrix2, temp)
+						for(jb = 0; jb < blockSize; jb++)
 							matrix3[jb] += temp * matrix2[jb];
 					}
 				}
